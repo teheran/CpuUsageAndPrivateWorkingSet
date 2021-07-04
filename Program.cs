@@ -56,10 +56,10 @@ namespace PrivateWorkingSet
         {
             internal uint NextEntryOffset;
             internal uint NumberOfThreads;
-            internal long WorkingSetPrivateSize;
+            internal long WorkingSetPrivateSize; // UNDOCUMENTED
             private fixed byte Reserved1[24];//private fixed byte Reserved1[48];
-            internal long UserTime;
-            internal long KernelTime;
+            internal long UserTime; // UNDOCUMENTED
+            internal long KernelTime; // UNDOCUMENTED
             internal UNICODE_STRING ImageName;
             internal int BasePriority;
             internal IntPtr UniqueProcessId;
@@ -345,16 +345,49 @@ namespace PrivateWorkingSet
         {
             await 
                 Observable.Generate(
-                    GetProcessInfos(),
+                    (
+                        sample_previous: new ProcessInfo[0], 
+                        timestamp_previous: 0L, 
+                        sample_last: GetProcessInfos(), 
+                        timestamp_last: Stopwatch.GetTimestamp()
+                    ),
                     _ => true,
-                    _ => GetProcessInfos(),
-                    pis => pis, // transform to RMM pis
-                    _ => TimeSpan.FromSeconds(1)
+                    x => 
+                    (
+                        sample_previous: x.sample_last, 
+                        timestamp_previous: x.timestamp_last, 
+                        sample_last: GetProcessInfos(), 
+                        timestamp_last: Stopwatch.GetTimestamp()
+                    ),
+                    samples => {
+                        var tatil_processor_time = (samples.timestamp_last - samples.timestamp_previous) * Environment.ProcessorCount;
+
+                        return
+                            samples.sample_last.Join(
+                                samples.sample_previous,
+                                x => x.ProcessId,
+                                x => x.ProcessId,
+                                (sample_last, sample_previous) => (
+                                    name: sample_last.ProcessName,
+                                    pid: sample_last.ProcessId,
+                                    pws: sample_last.PrivateWorkingSet,
+                                    cpu: (100.0 * (sample_last.TotalTime - sample_previous.TotalTime)) / tatil_processor_time
+                                )
+                            )
+                            .ToList();
+                    },
+                    _ => TimeSpan.FromSeconds(5)
                 )
-                .SelectMany(
-                    pis => pis.Where(x => x.ProcessName == "notepad")
-                )
-                .Do(x => Console.WriteLine($"{x.ProcessName}({x.ProcessId}): TotalTime={x.TotalTime}; HandleCount={x.HandleCount}; PrivateWorkingSet={x.PrivateWorkingSet / 1024}; PrivateBytes={x.PrivateBytes};"))
+                .Skip(1)
+                .Do(xs =>
+                {
+                    xs.Where(x => x.cpu >= 1 && x.pid != 0)
+                    .ToList()
+                    .ForEach(x => Console.WriteLine($"{x.name}({x.pid}): cpu%={Math.Round(x.cpu, 2)}; pws={x.pws / 1024};"));
+
+                    Console.WriteLine($"TOTAL: {Math.Min(100, Math.Round(xs.Where(x => x.pid != 0).Sum(xs => xs.cpu), 2))}");
+                    Console.WriteLine();
+                })
                 .ToTask();
         }
     }
