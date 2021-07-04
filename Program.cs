@@ -360,7 +360,7 @@ namespace PrivateWorkingSet
                         timestamp_last: Stopwatch.GetTimestamp()
                     ),
                     samples => {
-                        var tatil_processor_time = (samples.timestamp_last - samples.timestamp_previous) * Environment.ProcessorCount;
+                        var total_processor_time = (samples.timestamp_last - samples.timestamp_previous) * Environment.ProcessorCount;
 
                         return
                             samples.sample_last.Join(
@@ -371,12 +371,12 @@ namespace PrivateWorkingSet
                                     name: sample_last.ProcessName,
                                     pid: sample_last.ProcessId,
                                     pws: sample_last.PrivateWorkingSet,
-                                    cpu: (100.0 * (sample_last.TotalTime - sample_previous.TotalTime)) / tatil_processor_time
+                                    cpu: (100.0 * (sample_last.TotalTime - sample_previous.TotalTime)) / total_processor_time
                                 )
                             )
                             .ToList();
                     },
-                    _ => TimeSpan.FromSeconds(5)
+                    _ => TimeSpan.FromSeconds(1)
                 )
                 .Skip(1)
                 .Do(xs =>
